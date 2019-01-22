@@ -476,7 +476,7 @@ class Monitor(object):
         Args:
             point:           The name of the monitor point. If omitted it will use the function name. 
                              Can also be a tuple if function monitors several variables.
-            *args, **kwargs: Also accepts all the arguments of :class:`.register_monitor`
+            *args, **kwargs: Also accepts all the arguments of :meth:`.register_monitor`
 
         Returns:
             Decorator
