@@ -358,8 +358,9 @@ class Monitor(object):
             2) add the function to the Monitor class  polling schedule.
 
         Args:
-            point:           The name of the monitor point. If omitted it will use the function name
-            *args, **kwargs: Also accepts all the arguments of register_monitor()
+            point:           The name of the monitor point. If omitted it will use the function name. 
+                             Can also be a tuple if function monitors several variables.
+            *args, **kwargs: Also accepts all the arguments of :meth:`.register_monitor`
 
         Returns:
             Decorator

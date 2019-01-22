@@ -647,7 +647,7 @@ class CommsLog(Database):
         """
 
         # Onlu accept arguments for the columns in the db.
-        if len(set(kwargs.keys()).intersection(['nid', 'pass_id', 'orig', 'dest'])) == 0:
+        if len(kwargs)!=0 and len(set(kwargs.keys()).intersection(['nid', 'pass_id', 'orig', 'dest'])) == 0:
             raise Exception("One or more invalid arguments {}".format(kwargs))
 
         where = None
