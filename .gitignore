@@ -5,6 +5,10 @@
 
 \.pytest_cache/
 
+\.vscode
+\.coverage
+*\.db
+
 _venv/
 
 src/libgs\.egg-info/
