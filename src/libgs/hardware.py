@@ -42,12 +42,8 @@ This module contains base classes for interfacing with key hardware components:
 
 As well as implementations for some common Rotator and Radios.
 
-Implementing a new hardware interface
--------------------------------------
-
-Derive from the appropriate base class and implement the interface methods. 
+In order to implment new new hardware interface, derive from the appropriate base class and implement the interface methods. 
 See :class:`RotatorBase` and :class:`RadioBase` for details.
-
 
 """
 

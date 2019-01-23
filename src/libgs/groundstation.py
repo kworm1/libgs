@@ -34,6 +34,11 @@ libgs.groundstation
 
 :date:   Thu May 25 14:08:34 2017
 :author: Kjetil Wormnes
+
+This implements the main GroundStation class. It derives from :class:`GroundStationbase` as it is conceivable that a different type of
+implementation would be desired. In general, however, most implementation of Ground Stations will want to derive from the :class:`GroundStation`
+class and just overload the methods that are needed.
+
 """
 
 import ephem
@@ -133,36 +138,6 @@ def _mpl_make_waterfall_jpg(radios, recordings):
     buf.close()
     return image_data
 
-def _compute_antenna_points(pdat, max_offp):
-
-    ant_p = DataFrame(columns=pdat.columns)
-    ant_p = ant_p.append(pdat.iloc[0])
-
-
-    R2D = 180.0/pi
-    D2R = pi/180.0
-
-    for k,r in pdat.iterrows():
-        s = angles.sep(ant_p.iloc[-1].az*D2R, ant_p.iloc[-1].el*D2R, r.az*D2R, r.el*D2R)*R2D
-
-        if (s >= max_offp):
-            ant_p = ant_p.append(r)
-
-
-
-    if len(ant_p) > 1:
-        t = ant_p.index[:-1:2]
-        ant_p = ant_p.iloc[1::2]
-        ant_p.index =t
-    elif len(ant_p) == 0:
-        raise Error("Failed to compute any antenna points")
-
-
-
-    return ant_p
-
-
-
 
 
 
@@ -170,12 +145,33 @@ class GroundStationBase(object):
     """
     Base class for ground stations.
     
-    It implements the necessary interface with exceptions being thrown. 
-    By inheriting from this class when making new ground stations you guarantee
-    that invalid implementation raises exceptions.
+    If implementing a new GroundStation class, derive from this class and overload as a minimum the interface methods:
+
+    * :meth:`.transmit`
+    * :meth:`.do_action`
+    * :meth:`.set_rangerate`
+    * :meth:`.track`
+
+    .. note::
+       do_action, set_rangerate and transmit are implemented in :class:`GroundStation` as simple wrappers with some logging
+       of the respective methods :meth:`.protocols.protocolbase.ProtocolBase.send_bytes`, :meth:`.protocols.protocolbase.ProtocolBase.do_action`,
+       :meth:`.hardware.RadioBase.set_range_rate`. 
+
+       .. warning::
+          In the future these interface methods are likely to be merged into this base class instead, and will no longer require overloading 
+          in new implementations.
+
+    The following methods can be overloaded if the functionality is required:
+
+    * :meth:`.power_up`
+    * :meth:`.power_down`
+    
     """
     
+    #: The time interval at  which to run the monitor callback while tracking
     MONITOR_SAVE_DT_TRACK   = Defaults.MONITOR_SAVE_DT_TRACK
+
+    #: The time interval at which to run the monitor callback when not tracking
     MONITOR_SAVE_DT_NOTRACK = Defaults.MONITOR_SAVE_DT_NOTRACK
 
     
@@ -199,6 +195,9 @@ class GroundStationBase(object):
 
     @property
     def radios(self):
+        """
+        A list of radios (see :class:`~.hardware.RadioBase` ) that are installed on the groundstation
+        """
         return self._radios
     
     @radios.setter
@@ -214,6 +213,9 @@ class GroundStationBase(object):
       
     @property
     def rotators(self):
+        """
+        A list of rotators (see :class:`~.hardware.RotatorBase` ) that are installed on the groundstation
+        """
         return self._rotators
     
     @rotators.setter
@@ -228,6 +230,10 @@ class GroundStationBase(object):
         
     @property
     def protocols(self):
+        """
+        A list of protocols (see :class:`~.protocols.protocolbase.ProtocolBase` ) that are installed on the groundstation
+        """
+
         return self._protocols
         
     @protocols.setter
@@ -243,6 +249,20 @@ class GroundStationBase(object):
 
     @property
     def protocol(self):
+        """
+        Property to set/get the current protocol. When setting you can use the :attr:`~.protocols.protocolbase.ProtocolBase.name` attribute
+        of the protocol, or its instance. To use the name syntax it must already be installed (exist in the :attr:`.protocols` list).
+
+        Examples:
+
+        >>> gs.protocols = [MyFavoriteProtocol(name='a_protocol'), MyOtherProtocol(name='other_protocol')]
+        >>> gs.protocol = 'a_protocol'
+
+        or you can directly assign a protocol:
+
+        >>> gs.protocol = MyFavoriteProtocol()
+
+        """
         return self._protocol
         
     @protocol.setter
@@ -267,6 +287,10 @@ class GroundStationBase(object):
         
     @property
     def propagator(self):
+        """
+        Set / Get a propagator. This is not necessary, but if installed it will permit you to call :meth:`track` with just a norad ID
+        rather than the full az/el schedule.        
+        """
         return self._propagator
         
     @propagator.setter
@@ -278,6 +302,11 @@ class GroundStationBase(object):
 
     @property
     def monitor(self):
+        """
+        Set / Get a :class:`~.monitoring.Monitor`. If a monitor is associated this way with the GroundStation, the values will be stored
+        in the :class:`~.database.MonitorDb` database. The rate at which this is saved is set with :attr:`.MONITOR_SAVE_DT_TRACK` 
+        and :attr:`.MONITOR_SAVE_DT_NOTRACK`
+        """
         if hasattr(self, '_monitor'):
             return self._monitor
         else:
@@ -294,6 +323,10 @@ class GroundStationBase(object):
 
     @property
     def rpcserver(self):
+        """
+        Assign an :class:`~.rpc.RPCServer` to the Ground Station if you want to be able to call its methods remotely
+        over XMLRPC.
+        """
         if hasattr(self, '_rpcserver'):
             return self._rpcserver
         else:
@@ -324,6 +357,10 @@ class GroundStationBase(object):
 
     @property
     def scheduler(self):
+        """
+        The currently associated :class:`~.scheduler.Scheduler`. This ensures that multiple schedulers will not be competing for
+        the GroundStation's attention.
+        """
         return self._scheduler if hasattr(self, '_scheduler') else None
 
     @scheduler.setter
@@ -348,6 +385,10 @@ class GroundStationBase(object):
             required but returning control while doing so.
 
             It is implemented by spinning the track function off into a separate thread
+
+            Args:
+                nid_or_pdata (int or DataFrame) : The norad ID (if a :attr:`.propagator` is installed, or a pass data DataFrame)
+                **kwargs: Any other argument to pass to :meth:`.track`
         """
 
         self._pthr_track = threading.Thread(target=self.track, args=(nid_or_pdata,), kwargs=kwargs)
@@ -356,6 +397,9 @@ class GroundStationBase(object):
     def stop_track(self, block=False):
         """
             Stop tracking satellite.
+
+            Args:
+                block (bool)    : If true, wait for trakcing thread to join before exiting.
         """
         if self._stop_track:
             log.debug("stop_track has already been called. Not doing anything.")
@@ -369,7 +413,7 @@ class GroundStationBase(object):
 
     def terminate(self):
         """
-        Wrapper for protocol.terminate()
+        Wrapper for :meth:`.protocols.protocolbase.ProtocolBase.terminate`
         """
         if not self.protocol:
             raise Error ("Error: groundstation.terminate. No protocol have been connected to Ground Station.")
@@ -378,7 +422,7 @@ class GroundStationBase(object):
 
     def init_rx(self):
         """
-        Wrapper for protocol.init_rx()
+        Wrapper for :meth:`.protocols.protocolbase.ProtocolBase.init_rx`
         """
 
         if not self.protocol:
@@ -388,7 +432,7 @@ class GroundStationBase(object):
 
     def init_rxtx(self):
         """
-        Wrapper for protocol.init_rxtx()
+        Wrapper for :meth:`.protocols.protocolbase.ProtocolBase.init_rxtx`
         """
 
         if not self.protocol:
@@ -397,6 +441,10 @@ class GroundStationBase(object):
             self.protocol.init_rxtx()
 
     def get_azel(self):
+        """
+        Loop through the installed :attr:`.rotators` and return a list of az/el positions by querying each
+        individual rotator's :meth:`~.hardware.RotatorBase.get_azel` method.
+        """
         result = []
         if len(self.rotators) == 0:
             raise Error ("Error: groundstation.get_azel. No rotators have been connected to Ground Station.")
@@ -406,6 +454,14 @@ class GroundStationBase(object):
         return result
             
     def set_azel(self, az, el, block=False):
+        """
+        Set the az/el pointing for each installed :attr:`.rotators`
+
+        Args:
+            az (float) : Azimuth angle
+            el (float) : Elevation angle
+            block (bool (optional)): If true, wait for antennas to be in position before returning.
+        """
         if self.rotators is None:
             raise Error("GroundStation.set_azel called but no rotators available")
         
@@ -420,6 +476,10 @@ class GroundStationBase(object):
 
 
     def stow(self, block=False):
+        """
+        Stow all installed :attr:`rotators`. The position the rotators are stowed in is set in the :attr:`.hardware.RotatorBase.STOWED_AZ`
+        and :attr:`.hardware.RotatorBase.STOWED_EL` attributes.
+        """
         if self.rotators is None:
             raise Error("GroundStation.stow called but no rotators available")
         
@@ -446,16 +506,47 @@ class GroundStationBase(object):
     ############################
     
     def set_rangerate(self, range_rate):
+        """
+        Set the range_rate for all installed radios.
+        Should normally be a wrapper for :meth:`.hardware.RadioBase.set_range_rate`
+
+        Args:
+            range_rate (float): The range rate (in m/s)        
+        """
         raise Error("GroundStation.set_rangerate interface not implemented")
 
-    def transmit(self):
+    def transmit(self, msg, wait=Defaults.TX_REPLY_TIMEOUT):
+        """
+        Send bytes to satellite
+        Should normally be a wrapper for :meth:`.protocols.protocolbase.ProtocolBase.send_bytes`   
+
+        Args:
+            msg (bytearray):    The bytes to send     
+            wait (int):         Number of seconds to wait for task to complete
+        """
         raise Error("GroundStation.transmit interface not implemented")
 
-    def track(self):
+    def track(self, nid_or_pdata, **kwargs):
+        """
+        Track satellite
+
+        Args:
+            nid_or_pdata (int or DataFrame) : The norad ID (if a :attr:`.propagator` is installed, or a pass data DataFrame)
+            **kwargs: Any other arguments
+        """
         raise Error("GroundStation.track interface not implemented")
 
 
     def do_action(self, desc, *args, **kwargs):
+        """
+        Perform an :class:`~libgs_ops.scheduling.Action`.
+        Should normally be a wrapper for :meth:`.protocols.protocolbase.ProtocolBase.do_action`
+
+        Args:
+            desc (str): Description of the action
+            *args     : Arguments to pass to :meth:`.protocols.protocolbase.ProtocolBase.do_action`
+            **kwargs  : KW Arguments to pass to :meth:`.protocols.protocolbase.ProtocolBase.do_action`
+        """
         raise Error("GroundStation.do_action interface")
         
         
@@ -465,14 +556,23 @@ class GroundStationBase(object):
     #
     ##############################
     def power_up(self):
+        """
+        This method is called when class initialises and can be overloaded to perform tasks such as powering on amplifiers etc.
+        """
         log.debug("Nothing is being powered on by ground station since the power_up interface has not been defined")
     
     def power_down(self):
+        """
+        This method is called when class destroys and can be overloaded to perform tasks such as powering down amplifiers etc.
+        """
         log.debug("Nothing is being powered down by ground station since the power_down interface has not been defined")
 
 
 
 class UILogHandler(logging.Handler):
+    """
+    A custom :class:`logging.Handler` that can be used to log to :attr:`.GSState.libgs_log`
+    """
 
     def __init__(self, gsstate):
         self._stateinstance = gsstate
@@ -493,9 +593,6 @@ class UILogHandler(logging.Handler):
 #       move to adfags. 
 #       It also includes a bunch of stuff that isnt needed anymore which would
 #       be good to get rid of
-        
-    
-
 class GSState(object):
     """
     Class to hold ground station state variables.
@@ -504,40 +601,29 @@ class GSState(object):
     (as its properties). The class does however have the ability to connect
     callbacks to those properites in order to, for example, update a UI.
 
-    Makes use of python properties to ensure the callbacks.
-
-    The state properties are:
-
-    ======= ======================================= ========================
-    prop    Description                             type
-    ======= ======================================= ========================
-    curpos  Current antenna position(s)             tuple or tuple-of-tuples
-    cmdpos  Commanded antenna position(s)           tuple or tuple-of-tuples
-    satpos  Current tracked satellite position(s)   tuple
-    nid     Current tracked satellite Norad ID      int
-    pdat    Current pass data                       DataFrame
-    state   Current tracking state                  str
-    ======= ======================================= ========================
-
-    .. todo::
-        Complete this table
+    Makes use of python properties to ensure the callbacks. It is also possible to assign states to be polled
 
     """
-    #TODO Complete table
 
     #
     # Tracking states
     #
-    IDLE = 'idle'
-    SLEWING = 'slewing'
-    WAITING = 'waiting'
-    TRACKING = 'tracking'
+    IDLE = 'idle'           #: See :attr:`.state`
+    SLEWING = 'slewing'     #: See :attr:`.state`
+    WAITING = 'waiting'     #: See :attr:`.state`
+    TRACKING = 'tracking'   #: See :attr:`.state`
 
     #: The logging handler that is used for adding log messages to ui
     uiloghandler = None
 
 
     def __init__(self, callbacks={}, callback_dt = {}, pollmap={}):
+        """
+        Args:
+            callbacks (dict):   A dictionary of callbacks to invoke upon setting state variables
+            callback_dt (dict): A dictionary of minimum time intervals between subsequent invokations of the callbacks
+            pollmap (dict):     A dictionary of state variables to poll using the designated polling functions (instead of callback)
+        """
 
         # Initialise all the properties
         self._curpos = []
@@ -669,20 +755,20 @@ class GSState(object):
         return decorator
 
 
-    def tracking_info():
-        """
-        Return info about tracking state
-        """
-        pass
+    # def tracking_info():
+    #     """
+    #     Return info about tracking state
+    #     """
+    #     pass
 
-    def hardware_info():
-        pass
+    # def hardware_info():
+    #     pass
 
-    def antenna_info():
-        pass
+    # def antenna_info():
+    #     pass
 
-    def service_info():
-        pass
+    # def service_info():
+    #     pass
 
 
     def __str__(self):
@@ -715,48 +801,87 @@ class GSState(object):
 
     @property
     def curpos(self):
+        """
+        List of current antenna az,el positions, in same order as :attr:`.GroundStationBase.rotators`
+        """
         return self._curpos
 
     @property
     def cmdpos(self):
+        """
+        List of current commanded positions, in same order as :attr:`.GroundStationBase.rotators`
+        """
         return self._cmdpos
 
     @property
     def satpos(self):
+        """
+        Current satellite position
+        """
         return self._satpos
 
     @property
     def state(self):
+        """
+        Current tracking state. One of
+        
+        * :attr:`.IDLE`
+        * :attr:`.SLEWING`
+        * :attr:`.WAITING`
+        * :attr:`.TRACKING`
+
+        """
         return self._state
 
     @property
     def pdat(self):
+        """
+        Current pass data DataFrame.
+        """
         return self._pdat
 
     @property
     def nid(self):
+        """
+        Currently tracked Norad ID.
+        """
         return self._nid
 
     # TODO: Store entire schedule (not just text) in state and do not
     #       permit two scheduler to be started with same gs
     @property
     def schedule(self):
+        """
+        Textual representation of current schedule
+        """
         return self._schedule
 
     @property
     def track_msg(self):
+        """
+        A human readable message about current tracking state
+        """
         return self._track_msg
 
     @property
     def libgs_log(self):
+        """
+        The latest :attr:`.utils.Defaults.UI_LOG_LEN` entries in the libgs-log.
+        """
         return '\n'.join(self._libgs_log)
 
     @property
     def pdu(self):
+        """
+        Depreacated
+        """
         return self._pdu
 
     @property
     def last_response(self):
+        """
+        The last received bytes from the satellite
+        """
         return self._last_response
 
     @last_response.setter
@@ -827,13 +952,24 @@ class GSState(object):
         
 class GroundStation(GroundStationBase):
     """
-        Main class for the ground station
+        Main class for the Ground Station
+
+        Performs the function of interfacing with the hardware and user and ensuring everything is logged appropriately. It is built
+        by deriving from :class:`GroundStationBase`
+
     """
     
     
+    #: Whether to record spectra while tracking and attempt to create a waterfall plot at end of pass
     RECORD_SPECTRA         = Defaults.RECORD_SPECTRA
+
+    #: If :attr:`RECORD_SPECTRA` is True, sets the maximum number of spectra to record.
     RECORD_SPECTRA_MAX_LEN = Defaults.RECORD_SPECTRA_MAX_LEN
+
+    #: If :attr:`RECORD_SPECTRA` is True, sets the interval at which to record a spectrum.
     RECORD_SPECTRA_DT      = Defaults.RECORD_SPECTRA_DT
+
+    #: Amount of time before tracking will timeout and the ground station return to idle. Must be larger than largest expected pass length.
     MAX_TRACK_DT           = Defaults.MAX_TRACK_DT
 
     #############################################
@@ -894,9 +1030,6 @@ class GroundStation(GroundStationBase):
 
     # TODO: deal with this wait. MAybe reomve? It conflicts wit conf.timeouts
     def transmit(self, msg, wait=Defaults.TX_REPLY_TIMEOUT):
-        """
-            Transmit something to a satellite
-        """
         if not isinstance(msg, bytearray):
             raise Error("Msg to transmit must be of type bytearray")
 
@@ -917,19 +1050,6 @@ class GroundStation(GroundStationBase):
             
 
     def do_action(self, desc, *args, **kwargs):
-        """
-            Ask the protocol to do something (to presumably do something with
-            the satellites) without any restrictions. The args and kwargs
-            are anything implemented in the protocol.
-
-            Note that when using this mode of transmission, logging is a bit
-            trickier. This function will do the best it can but since it doesnt
-            know much, that might not be very nice. Try to use the other
-            function unless you have to do something fancy.
-
-            The desc parameter is required in order to put SOMETHING in the log.
-        """
-
         self._log_comms("GS", "Protocol", "`%s`<%s, %s>"%(desc, args, kwargs))
 
         if self.protocol is None:
@@ -940,27 +1060,33 @@ class GroundStation(GroundStationBase):
 
     def track(self, nid_or_pdata, **kwargs):
         """
-            Track satellite by Norad ID
+            Track satellite by Norad ID or by specifying an az/el schedule as in :class:`libgs_ops.scheduling`
 
-            Track by moving in steps across the trajectory of the satellite
+            The tracking is done by moving in steps across the trajectory of the satellite
+
+            If specified by setting compute_ant_points to True, two things will happen:
+            
+              1. If the provided schedule does not have enough time resolution, it will be interpolated appropriately.
+              2. The tracking will not be for every point in the schedule, but instead based on the antenna 
+                 beamwidth by calling :meth:`.hardware.RotatorBase.azel_to_antenna_angles` for each rotator.
+              
+
+            Doing so means the tracking happens as follows: If x0 is the actual satellite position at time t0:
+
+                1. point to x0 + 1/2 beamwidth,
+                2. wait until x0 - 1/2 beamwidth
+                3. move to x0 + 1/2 beamwidth again ... etc
+
             
             Args:
                 nid (int) or schedule (pdata) : Either the Norad ID or the schedule to track.
-                             If Norad ID is provided and a propagator connected, then the
-                             method will compute the pdata itself.
-                
-                nid_or_pdata (int/pdata) : Either a schedule file (pdata) or a norad ID to track.
-                max_offp                 :  max offpointing to allow
-
-            If x0 is the actual satellite position at time t0:
-                1. point to x0 + max_offp,
-                2. wait until x0 - max_offp
-                3. move to x0 + max_offp again ... etc
-
-            Since the antenna requires a finite amount of time to move, if
-            max_offp is too small it will not have a chance to dwell at all.
-            min_dwell defaults to 1 second. An exception will be raised if
-            the antenna needs to move again before the minimum dwell time.
+                  If Norad ID is provided and a propagator connected, then the
+                  method will compute the pdata itself.                
+                nid_or_pdata (int/DataFrame) : Either a schedule file (pdata) or a norad ID to track.
+                rotators (list (:class:`~.hardware.RotatorBase`), optional): The list of rotators to track with. If not specified use :attr:`.rotators`.
+                min_el (float, optional): The minimum permitted elevation angle. If not specified used the highest :attr:`~.hardware.RotatorBase.MIN_EL` of
+                  the connected rotators. 
+                compute_ant_points (bool) : If true, do not follow every point in schedule but recompute
 
         """
         
@@ -1012,11 +1138,6 @@ class GroundStation(GroundStationBase):
                 if r.MIN_EL > min_el:
                     min_el = r.MIN_EL
                     
-        # #TODO: Remove
-        # if min_el < Defaults.PHYSICAL_ROTATOR_LIMIT_MIN:
-        #     log.error("min_el=%.2f deg is lower than the physical rotator limit of %.2f. Using physical limit instead"%(min_el, Defaults.PHYSICAL_ROTATOR_LIMIT_MIN))
-        #     min_el = Defaults.PHYSICAL_ROTATOR_LIMIT_MIN
-
         #
         # Check that tracking is not already in progress
         #
@@ -1301,7 +1422,7 @@ class GroundStation(GroundStationBase):
 
 
 
-    def __init__(
+    def __init__(        
                 self,
                 name,
                 propagator = None,
@@ -1313,6 +1434,25 @@ class GroundStation(GroundStationBase):
                 monlog     = None,
                 rpcserver  = None
             ):
+        """
+        .. note::
+            propagator, protocols, radios, rotators, rpcserver can also be set via their properties. The databases have to be specified
+            in this constructor.
+
+        Args:
+            name (str):                                                             Descriptive name of the ground station
+            propagator (:class:`~libgs_ops.propagator.Propagator`, optional):       A propagator to allow tracking by Norad ID
+            protocols (:class:`~.protocols.protocolbase.ProtocolBase`, optional):   List of protocols to make available to ground station
+            radios (:class:`~.hardware.RadioBase`, optional):                       List of radios to make available to ground station
+            rotators (:class:`~.hardware.RotatorBase`, optional):                   List of rotators to make available to ground station   
+            commslog (:class:`~.database.CommsLog`, optional):                      A database to use for storing communications. If omitted
+                                                                                    an sqlite file in local direcotry will be used.
+            passlog (:class:`~.database.PassDb`, optional):                         A database to use for storing information
+                                                                                    about passes during a track. If omitted an sqlite file in local direcotry will be used.
+            monlog (:class:`~.database.MonitorDb`, optional):                       A database to use for storing monitoring data. If omitted no data is stored.
+            rpcserver (:class:`~.rpc.RPCServer`, optional):                         If an rpcserver is specified, it will be possible to control the
+                                                                                    Ground Station remotely via XMLRPC.
+        """
 
         # initialise state
         self.state         = GSState()
@@ -1446,18 +1586,6 @@ class GroundStation(GroundStationBase):
         Just a convenience function to update the interval at which _save_monitor_data is invoked for monitor data
 
         """
-        # if not hasattr(self, '_monitor_logger'):
-        #     log.debug("Cannot set/unset monitor pass as no monitor connected")
-        #     return
-
-        # if self._monitor_logger is not None:
-        #     if passing:
-        #         self._monitor_logger._dt = self.MONITOR_SAVE_DT_TRACK
-        #         log.info("Decreased interval at which monitoring data is saved to {}".format(self._monitor_logger._dt))
-        #     else:
-        #         self._monitor_logger._dt = self.MONITOR_SAVE_DT_NOTRACK
-        #         log.info("Increased interval at which monitoring data is saved to {}".format(self._monitor_logger._dt))
-
 
         if passing:
             self._monitor_logger_dt = self.MONITOR_SAVE_DT_TRACK
@@ -1491,24 +1619,25 @@ class GroundStation(GroundStationBase):
 
 
 
-    #
-    # Log entry for failed communication
-    #
+    #:
+    #: Log entry for failed communication
+    #:    
     FAILED_COMMUNICATION = 'Communication failed'
 
 
     def set_schedule_msg(self, msg):
+        """
+        Interface method to set the :attr:`GSState.schedule` attribute.
+        """
         self.state.schedule = msg
 
-     
-#    def register_monitor(self, *args, **kwargs):
-#        """
-#        Just a wrapper for Monitor.register_monitor
-#        """
-#        self._monitor.register_monitor(*args, **kwargs)
-   
 
     def receive(self, msg):
+        """
+        Callback that is invoked whenever data is received. See :meth:`.protocols.protocolbase.ProtocolBase.set_handler`.
+
+        It ensures communications are logged in the associated :class:`~.database.CommsLog`.
+        """
         msg = bytearray(msg)
 
 
