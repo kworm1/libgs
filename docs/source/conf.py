@@ -201,7 +201,7 @@ intersphinx_mapping = {
     'sqlalchemy': ('https://docs.sqlalchemy.org/en/latest/', None),
     'numpy': ('https://docs.scipy.org/doc/numpy/', None),
     'pandas': ('https://pandas.pydata.org/pandas-docs/stable', None),
-    'bokeh': ('https://bokeh.pydata.org/en/latest/', None),
+    'bokeh': ('https://bokeh.pydata.org/en/0.12.6/', None),
     'libgs_ops': ('https://kworm1.github.io/libgs_ops-docs/', None)
     }
 
