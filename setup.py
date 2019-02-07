@@ -131,10 +131,6 @@ setup(
     include_package_data=True,
     zip_safe=False,
 
-    dependency_links=[
-        'git+https://bitbucket.unswcanberraspace.com/scm/adfags/libgs_ops.git#egg=libgs_ops-0'
-    ],
-
     # This field lists other packages that your project depends on to run.
     # Any package you put here will be installed by pip when your project is
     # installed, so they must be valid existing projects.
