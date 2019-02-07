@@ -386,15 +386,15 @@ _HELP_FILES = """
 
 class RESTAPI(object):
     """
-    THE REST API class
-    ------------------
+    THE REST API class.
 
     Will create a RESTFUL API interface to the Commslog database and start
     it on a specified port. The api will be started in a separate thread.
 
     Usage:
-      >>> api = RESTAPI()
-      >>> api.start()
+
+    >>> api = RESTAPI()
+    >>> api.start()
 
     The help will be automatically generated and is available on the endpoint ``/api`` after
     creation. See :mod:`~libgs.restapi` for more details.

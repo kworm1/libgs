@@ -358,7 +358,8 @@ class Monitor(object):
         appropriately formatted for adding using :meth:`.register_monitor`.
 
         The call to fn is being delegated to an executor, and while it is not
-        done, calls to next() will return None, otherwise it will return a tuple containging
+        done, calls to next() will return None, otherwise it will return a tuple containging:
+        
             * The timestamp the data the return value of fn
             * Any Exceptions that occurred
             * The return value
@@ -461,7 +462,7 @@ class Monitor(object):
         specifying point as a tuple.
         
         Please see :meth:`.register_monitor` for the full list of the remaining arguments that can be applied.
-        *args and **kwargs can be anything accepted by :meth:`.register_monitor` except name, gen or dependents.
+        ``*args`` and ``**kwargs`` can be anything accepted by :meth:`.register_monitor` except name, gen or dependents.
 
         Example: 
         
@@ -476,7 +477,7 @@ class Monitor(object):
         Args:
             point:           The name of the monitor point. If omitted it will use the function name. 
                              Can also be a tuple if function monitors several variables.
-            *args, **kwargs: Also accepts all the arguments of :meth:`.register_monitor`
+            ``*args``, ``**kwargs``: Also accepts all the arguments of :meth:`.register_monitor`
 
         Returns:
             Decorator

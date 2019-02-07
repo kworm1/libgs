@@ -207,7 +207,7 @@ Create a new dasboard
 ^^^^^^^^^^^^^^^^^^^^^^
 
 For this example we will create a simplified version of the TrackDash from scratch that only includes a :class:`SatellitePass`,
-:class:`FrequencyP
+:class:`Frequency`.
 
 First lets create the plot elements
 

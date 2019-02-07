@@ -34,6 +34,7 @@ libgs.database
 :date: Fri Jan 12 13:47:56 2018
 :author: Kjetil Wormnes
 
+Module for manipulation of the libgs databases.
 
 
 """
@@ -130,7 +131,27 @@ _ALLOW_OLDSTYLE_HEX = True
 def tfilterstr2query(filters):
     """
     Convert a timestamp filter string into a well formated
-    where query
+    where query. 
+
+    A filter string shall follow the format:
+    <comparator><value>
+
+    For example::
+
+        '>2018-01-01'
+    
+    will match anything after 2018-01-01 at 00:00:00::
+
+        '<=2019-02-01T14:00:01'
+
+    will match anything before or exactly equal to 2019-02-01T14:00:01.
+
+    Valid comparators are ``<``, ``>``, ``<=``, ``>=``.
+
+    If no comparator is present, it will match only the exact timestamp specified.
+
+    Args:
+        filters (list(basestring)): A list of filter strings in the format described above.
     """
 
     query = []
@@ -234,7 +255,7 @@ class Database(object):
         """ Return the number of rows in a table
 
         Args:
-            table:
+            table: The table to count
 
         Returns:
             Number of rows
@@ -641,10 +662,17 @@ class CommsLog(Database):
         self.put_df(self._TABLE, df, index=False)
 
     def get(self, limit=None, tstamps=None, **kwargs):
-        """ Get the communication log
+        """ Get the communication log.
+
+        Filter by any column, the where query is constructed as WHERE <column> like <...> AND <column> like <...>
+
+        where the column and ... come from the kwargs. You can do partial matches using the % wildchar.
+        e.g. ``keys = ['%NW%', '%NE%']`` will match all keys with NW and NE in their names.
+
 
         Args:
-            where: a WHERE=... SQL query to apply to the query
+            tstamps: Timestamp filter. See :func:`tfilterstr2query`
+            **kwargs: Other column filters
             limit: limit to a number of results
 
         Returns:
@@ -727,6 +755,16 @@ class KVDb(Database):
 
 
     def put(self, key, value, **kwargs):
+        """
+        Add key/value pair to database.
+
+        Args:
+            key:        The key to add
+            value:      The corresponding value
+            **kwargs:   Additional columns to set (if available in the database)
+        """
+
+
         
         if any([k not in self._NCOLS for k in kwargs.keys()]):
             raise Error("{} is not a clolumn in this database. Valid columns are {}".format(k, self._NCOLS))
@@ -774,12 +812,22 @@ class KVDb(Database):
         
         
     def get(self, limit=None, keys=None, tstamps=None, **kwargs):
-        """      
-        .. note:: 
-        
-           To do partial matches, use the % wildchar.
-           eg keys = ['%NW%', '%NE%'] will match all keys
-           with NW and NE in their names.
+        """ Get data from the database.
+
+        Filter by any column, the where query is constructed as WHERE <column> like <...> AND <column> like <...>
+
+        where the column and ... come from the kwargs. You can do partial matches using the % wildchar.
+        e.g. ``keys = ['%NW%', '%NE%']`` will match all keys with NW and NE in their names.
+
+
+        Args:
+            tstamps: Timestamp filter. See :func:`tfilterstr2query`
+            **kwargs: Other column filters
+            limit: limit to a number of results
+
+        Returns:
+            :class:`.DataFrame` containing the stored data
+
         """
         
         where = None

@@ -46,7 +46,6 @@ libgs module reference
     ~libgs.groundstation
     ~libgs.visualisation
     ~libgs.database
-    ~libgs.emulators
     ~libgs.monitoring
     ~libgs.protocols.protocolbase
 
